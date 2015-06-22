@@ -20,6 +20,7 @@ install: all
 	$(MKDIR) $(abspath $(DESTDIR)/submissions/)
 	$(MKDIR) $(abspath $(DESTDIR)/public/)
 	$(UPDATE) src/public src/sim-server src/conver src/judge-machine src/CTH $(abspath $(DESTDIR))
+	$(UPDATE) src/proot /usr/local/bin/proot
 
 	# Set database pass
 	@bash -c 'if [ ! -e $(abspath $(DESTDIR)/db.config) ]; then\

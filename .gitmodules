@@ -1,3 +1,6 @@
 [submodule "src/Algorithms"]
 	path = src/Algorithms
 	url = https://github.com/krzyk240/Algorithms
+[submodule "src/PRoot"]
+	path = src/PRoot
+	url = https://github.com/krzyk240/PRoot

@@ -1,12 +1,17 @@
 include ../Makefile.config
 
 .PHONY: all
-all: chmod-default Conver CppToHTML Judge_machine server lib setup-install
+all: chmod-default Conver CppToHTML Judge_machine server lib setup-install proot
 
 .PHONY: Conver CppToHTML Judge_machine server lib
 Conver CppToHTML Judge_machine server: lib
 Conver CppToHTML Judge_machine server lib:
 	$(Q)$(MAKE) -C $@/
+
+.PHONY: proot
+proot:
+	$(Q)$(MAKE) -C PRoot/src/
+	$(CP) PRoot/src/proot proot
 
 chmod-default: Algorithms/other/chmod-default.cpp
 	$(Q)$(call P,LINK,$@)$(CXX) $^ $(CXXFLAGS) -o $@
@@ -19,9 +24,10 @@ lib/libsim.a: lib
 
 .PHONY: clean
 clean:
-	$(Q)$(RM) *.o *.deps chmod-default sim-server setup-install
+	$(Q)$(RM) *.o *.deps chmod-default sim-server setup-install proot
 	$(Q)$(MAKE) clean -C lib/
 	$(Q)$(MAKE) clean -C Conver/
 	$(Q)$(MAKE) clean -C CppToHTML/
 	$(Q)$(MAKE) clean -C Judge_machine/
 	$(Q)$(MAKE) clean -C server/
+	$(Q)$(MAKE) clean -C PRoot/src/
