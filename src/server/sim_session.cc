@@ -20,37 +20,32 @@ Sim::Session::State Sim::Session::open() {
 	if (id_.empty())
 		return FAIL;
 
-	try {
-		UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->
-			prepareStatement(
-				"SELECT user_id, data, type, username, ip, user_agent "
-				"FROM session s, users u WHERE s.id=? AND time>=? AND u.id=s.user_id"));
-		pstmt->setString(1, id_);
-		pstmt->setString(2, date("%Y-%m-%d %H:%M:%S",
-				time(NULL) - SESSION_MAX_LIFETIME));
+	sqlite3_stmt *stmt;
+	if (sqlite3_prepare_v2(sim_.db, "SELECT user_id, data, type, username, ip, "
+			"user_agent FROM session s, users u "
+			"WHERE s.id=? AND time>=? AND u.id=s.user_id", -1, &stmt, NULL))
+		return FAIL;
 
-		UniquePtr<sql::ResultSet> res(pstmt->executeQuery());
-		if (res->next()) {
-			user_id = res->getString(1);
-			data = res->getString(2);
-			user_type = res->getUInt(3);
-			username = res->getString(4);
+	sqlite3_bind_text(stmt, 1, id_.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 2, date("%Y-%m-%d %H:%M:%S",
+		time(NULL) - SESSION_MAX_LIFETIME).c_str(), -1, SQLITE_TRANSIENT);
 
-			// If no session injection
-			if (sim_.client_ip_ == res->getString(5) &&
-					sim_.req_->headers.isEqualTo("User-Agent",
-						res->getString(6)))
-				return (state_ = OK);
+	if (sqlite3_step(stmt) == SQLITE_ROW) {
+		user_id = (const char*)sqlite3_column_text(stmt, 0);
+		data = (const char*)sqlite3_column_text(stmt, 1);
+		user_type = sqlite3_column_int(stmt, 2);
+		username = (const char*)sqlite3_column_text(stmt, 3);
+
+		// If no session injection
+		if (sim_.client_ip_ == (const char*)sqlite3_column_text(stmt, 4) &&
+				sim_.req_->headers.isEqualTo("User-Agent",
+					(const char*)sqlite3_column_text(stmt, 5))) {
+			sqlite3_finalize(stmt);
+			return (state_ = OK);
 		}
-
-	} catch (const std::exception& e) {
-		E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__, __LINE__,
-			e.what());
-
-	} catch (...) {
-		E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
 	}
 
+	sqlite3_finalize(stmt);
 	sim_.resp_.setCookie("session", "", 0); // Delete cookie
 	return FAIL;
 }
@@ -69,91 +64,77 @@ static string generate_id() {
 
 Sim::Session::State Sim::Session::create(const string& _user_id) {
 	close();
-	try {
-		UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->
-			prepareStatement("INSERT INTO session "
-				"(id, user_id, ip, user_agent,time) VALUES(?,?,?,?,?)"));
 
-		// Remove obsolete sessions
-		UniquePtr<sql::Statement>(sim_.db_conn()->createStatement())->
-			executeUpdate(string("DELETE FROM `session` WHERE time<'").
-				append(date("%Y-%m-%d %H:%M:%S'",
-					time(NULL) - SESSION_MAX_LIFETIME)));
-		pstmt->setString(2, _user_id);
-		pstmt->setString(3, sim_.client_ip_);
-		pstmt->setString(4, sim_.req_->headers.get("User-Agent"));
-		pstmt->setString(5, date("%Y-%m-%d %H:%M:%S"));
+	// Remove obsolete sessions
+	sqlite3_exec(sim_.db, string("BEGIN; DELETE FROM `session` WHERE time<'").
+		append(date("%Y-%m-%d %H:%M:%S'",
+			time(NULL) - SESSION_MAX_LIFETIME)).c_str(), NULL, NULL, NULL);
 
-		for (;;) {
-			id_ = generate_id();
-			pstmt->setString(1, id_);
-
-			try {
-				pstmt->executeUpdate();
-				break;
-
-			} catch (...) {
-				continue;
-			}
-		}
-
-		sim_.resp_.setCookie("session", id_, time(NULL) + SESSION_MAX_LIFETIME, "/", "", true);
-		state_ = OK;
-
-	} catch (const std::exception& e) {
-		E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__, __LINE__,
-			e.what());
-		state_ = FAIL;
-
-	} catch (...) {
-		E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
-		state_ = FAIL;
+	sqlite3_stmt *stmt;
+	if (sqlite3_prepare_v2(sim_.db, "INSERT INTO session(id, user_id, ip, data,"
+		"user_agent, time) VALUES(?,?,?,'',?,?)", -1, &stmt, NULL)) {
+		sqlite3_exec(sim_.db, "ROLLBACK", NULL, NULL, NULL);
+		return state_ = FAIL;
 	}
 
-	return state_;
+	sqlite3_bind_text(stmt, 2, _user_id.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 3, sim_.client_ip_.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 4, sim_.req_->headers.get("User-Agent").c_str(), -1,
+		SQLITE_TRANSIENT);
+	sqlite3_bind_text(stmt, 5, date("%Y-%m-%d %H:%M:%S").c_str(), -1,
+		SQLITE_TRANSIENT);
+
+	for (;;) {
+		id_ = generate_id();
+		sqlite3_bind_text(stmt, 1, id_.c_str(), -1, SQLITE_STATIC);
+
+		if (sqlite3_step(stmt) == SQLITE_DONE)
+			break;
+
+		DEBUG_ERROR();
+
+		sqlite3_reset(stmt);
+	}
+
+	sqlite3_finalize(stmt);
+	sqlite3_exec(sim_.db, "COMMIT", NULL, NULL, NULL);
+
+	sim_.resp_.setCookie("session", id_, time(NULL) + SESSION_MAX_LIFETIME, "/",
+		"", true);
+	return state_ = OK;
 }
 
 void Sim::Session::destroy() {
 	if (state_ != OK)
 		return;
 
-	try {
-		UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->
-			prepareStatement("DELETE FROM session WHERE id=?"));
-		pstmt->setString(1, id_);
-		pstmt->executeUpdate();
-
-		sim_.resp_.setCookie("session", "", 0); // Delete cookie
-
-	} catch (const std::exception& e) {
-		E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__, __LINE__,
-			e.what());
-
-	} catch (...) {
-		E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
+	sqlite3_stmt *stmt;
+	if (sqlite3_prepare_v2(sim_.db, "DELETE FROM session WHERE id=?", -1, &stmt,
+			NULL) == SQLITE_OK) {
+		sqlite3_bind_text(stmt, 1, id_.c_str(), -1, SQLITE_STATIC);
+		sqlite3_step(stmt);
+		sqlite3_finalize(stmt);
 	}
 
+	sim_.resp_.setCookie("session", "", 0); // Delete cookie
 	state_ = CLOSED;
 }
 
 void Sim::Session::close() {
-	if (state_ == OK) {
-		try {
-			UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->
-				prepareStatement("UPDATE session SET data=?, time=? WHERE id=?"));
-			pstmt->setString(1, data);
-			pstmt->setString(2, date("%Y-%m-%d %H:%M:%S"));
-			pstmt->setString(3, id_);
-			pstmt->executeUpdate();
-
-		} catch (const std::exception& e) {
-			E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__, __LINE__,
-				e.what());
-
-		} catch (...) {
-			E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
-		}
-	}
-
 	state_ = CLOSED;
+	if (state_ != OK)
+		return;
+
+	sqlite3_stmt *stmt;
+	if (sqlite3_prepare_v2(sim_.db, "UPDATE session SET data=?, time=? "
+			"WHERE id=?", -1, &stmt, NULL))
+		return;
+
+	sqlite3_bind_text(stmt, 1, data.c_str(), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 2, date("%Y-%m-%d %H:%M:%S").c_str(), -1,
+		SQLITE_TRANSIENT);
+	sqlite3_bind_text(stmt, 3, id_.c_str(), -1, SQLITE_STATIC);
+	sqlite3_step(stmt);
+
+	sqlite3_finalize(stmt);
 }

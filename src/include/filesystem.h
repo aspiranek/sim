@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <string>
 #include <sys/stat.h>
@@ -189,6 +190,17 @@ inline int access(const std::string& pathname, int mode) {
 	return access(pathname.c_str(), mode);
 }
 
+
+/**
+ * @brief Moves file from @p oldpath to @p newpath
+ * @details First creates directory containing @p newpath and then uses
+ * rename(2) to move file/directory
+ *
+ * @param oldpath path to file/directory
+ * @param newpath location
+ *
+ * @return Return value of rename(2)
+ */
 inline int move(const std::string& oldpath, const std::string& newpath) {
 	size_t x = newpath.find_last_of('/');
 	if (x != std::string::npos)
@@ -400,3 +412,61 @@ int putFileContents(const char* file, const char* data, size_t len = -1);
 inline int putFileContents(const std::string& file, const std::string& data) {
 	return putFileContents(file.c_str(), data.c_str(), data.size());
 }
+
+// File removing adaptor
+class FileRemover {
+	char* name;
+
+public:
+	explicit FileRemover(const char* str) { name = strdup(str); }
+
+	explicit FileRemover(const std::string& str) {
+		size_t len = str.size();
+		name = new char[len + 1];
+		name[len] = '\0';
+		strncpy(name, str.data(), len);
+	}
+
+	FileRemover(const char* str, size_t len) {
+		name = new char[len + 1];
+		strncpy(name, str, len);
+	}
+
+	~FileRemover() { unlink(name); }
+
+	void cancel() {
+		free(name);
+		name = NULL;
+	}
+
+	int removeFile() { return unlink(name); }
+};
+
+// Directory removing adaptor
+class DirectoryRemover {
+	char* name;
+
+public:
+	explicit DirectoryRemover(const char* str) { name = strdup(str); }
+
+	explicit DirectoryRemover(const std::string& str) {
+		size_t len = str.size();
+		name = new char[len + 1];
+		name[len] = '\0';
+		strncpy(name, str.data(), len);
+	}
+
+	DirectoryRemover(const char* str, size_t len) {
+		name = new char[len + 1];
+		strncpy(name, str, len);
+	}
+
+	~DirectoryRemover() { remove_r(name); }
+
+	void cancel() {
+		free(name);
+		name = NULL;
+	}
+
+	int removeDirectory() { return remove_r(name); }
+};

@@ -11,15 +11,18 @@ Conver CppToHTML Judge_machine server lib:
 chmod-default: Algorithms/other/chmod-default.cpp
 	$(Q)$(call P,LINK,$@)$(CXX) $^ $(CXXFLAGS) -o $@
 
-setup-install: setup_install.cc lib/libsim.a
-	$(Q)$(call P,LINK,$@)$(CXX) $^ $(CXXFLAGS) -o $@ -lmysqlcppconn
+db_init_dump.c: db_init.sql
+	$(Q)$(call P,GEN,$@)xxd -i $< > $@
+
+setup-install: setup_install.o db_init_dump.o lib/libsim.a
+	$(Q)$(call P,LINK,$@)$(CXX) $^ $(CXXFLAGS) -o $@ -lsqlite3
 
 lib/libsim.a: lib
 	@
 
 .PHONY: clean
 clean:
-	$(Q)$(RM) *.o *.deps chmod-default sim-server setup-install
+	$(Q)$(RM) *.o *.deps chmod-default sim-server db_init_dump.c setup-install
 	$(Q)$(MAKE) clean -C lib/
 	$(Q)$(MAKE) clean -C Conver/
 	$(Q)$(MAKE) clean -C CppToHTML/

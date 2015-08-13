@@ -51,7 +51,7 @@ private:
 
 	class TemplateWithMenu;
 
-	static std::string submissionStatus(const std::string& status);
+	static std::string submissionStatus(int status);
 
 	static std::string convertStringBack(const std::string& str);
 

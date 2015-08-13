@@ -3,6 +3,12 @@
 #include <cctype>
 #include <string>
 
+inline const char* unnull(const char* s) { return s ? s : ""; }
+
+inline const char* unnull(const unsigned char* s) {
+	return s ? (const char*)s : "";
+}
+
 std::string toString(long long a);
 
 std::string toString(unsigned long long a);

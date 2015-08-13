@@ -6,6 +6,9 @@
 #include "../include/db.h"
 #include "../include/memory.h"
 
+#include "../include/debug.h"
+#define DEBUG_ERROR()  E("\e[31m%s:%d Error: %i - %s => %s\e[m\n", __FILE__, __LINE__, sqlite3_errcode(sim_.db), sqlite3_errstr(sqlite3_errcode(sim_.db)), sqlite3_errmsg(sim_.db));
+
 // Every object is independent, thread-safe
 class Sim {
 private:
@@ -17,7 +20,7 @@ private:
 	class Template;
 	class User;
 
-	UniquePtr<DB::Connection> db_conn_;
+	sqlite3 *db;
 	std::string client_ip_;
 	const server::HttpRequest* req_;
 	server::HttpResponse resp_;
@@ -25,8 +28,6 @@ private:
 	Contest *contest;
 	Session *session;
 	User *user;
-
-	DB::Connection& db_conn() const { return *db_conn_; }
 
 	// sim_errors.cc
 	void error403();
@@ -54,7 +55,7 @@ private:
 	 * @param user_id user id
 	 * @return user type
 	 */
-	int getUserType(const std::string& user_id);
+	int getUserType(const char* user_id);
 
 public:
 	Sim();

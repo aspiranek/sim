@@ -7,18 +7,30 @@
 #include "../include/filesystem.h"
 #include "../include/time.h"
 
-#include <cppconn/prepared_statement.h>
+#include <stdexcept>
 
 using std::string;
 
-Sim::Sim() : db_conn_(DB::createConnectionUsingPassFile(".db.config")),
-		client_ip_(), req_(NULL), resp_(server::HttpResponse::TEXT),
-		contest(NULL), session(NULL), user(NULL) {
+Sim::Sim() : db(NULL), client_ip_(), req_(NULL),
+		resp_(server::HttpResponse::TEXT), contest(NULL), session(NULL),
+		user(NULL) {
 	// Because of exception safety (we do not want to make memory leak)
 	try {
 		contest = new Contest(*this);
 		session = new Session(*this);
 		user = new User(*this);
+
+		// Configure SQLite
+		sqlite3_config(SQLITE_CONFIG_MULTITHREAD);
+		sqlite3_config(SQLITE_CONFIG_MEMSTATUS, false);
+		sqlite3_initialize();
+		// Open database connection
+		if (sqlite3_open(DB_FILENAME, &db)) {
+			string msg = string("Cannot open database: ") + sqlite3_errmsg(db);
+			sqlite3_close(db);
+			throw std::runtime_error(msg);
+		}
+		sqlite3_busy_timeout(db, 0);
 
 	} catch (...) {
 		// Clean up
@@ -33,6 +45,7 @@ Sim::~Sim() {
 	delete contest;
 	delete session;
 	delete user;
+	sqlite3_close(db);
 }
 
 server::HttpResponse Sim::handle(string client_ip,
@@ -129,23 +142,18 @@ void Sim::redirect(const string& location) {
 	resp_.headers["Location"] = location;
 }
 
-int Sim::getUserType(const string& user_id) {
-	try {
-		UniquePtr<sql::PreparedStatement> pstmt(db_conn()->
-			prepareStatement("SELECT type FROM users WHERE id=?"));
-		pstmt->setString(1, user_id);
+int Sim::getUserType(const char* user_id) {
+	int rc = 3;
+	sqlite3_stmt *stmt;
+	if (sqlite3_prepare_v2(db, "SELECT type FROM users WHERE id=?", -1, &stmt,
+		NULL))
+		return rc;
 
-		UniquePtr<sql::ResultSet> res(pstmt->executeQuery());
-		if (res->next())
-			return res->getUInt(1);
+	sqlite3_bind_text(stmt, 1, user_id, -1, SQLITE_STATIC);
 
-	} catch (const std::exception& e) {
-		E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__, __LINE__,
-			e.what());
+	if (sqlite3_step(stmt) == SQLITE_ROW)
+		rc = sqlite3_column_int(stmt, 0);
 
-	} catch (...) {
-		E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
-	}
-
-	return 3;
+	sqlite3_finalize(stmt);
+	return rc;
 }

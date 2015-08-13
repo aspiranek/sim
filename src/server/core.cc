@@ -6,9 +6,9 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <csignal>
+#include <cstdlib>
 #include <cstring>
-
-using std::cerr;
+#include <unistd.h>
 
 #define WORKERS 1
 static int socket_fd;

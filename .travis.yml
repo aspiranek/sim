@@ -11,27 +11,11 @@ sudo: false
 addons:
   apt:
     packages:
-    - mysql-server
-    - mysql-client
-    - libboost-dev # Needed for MySQL Connector/C++
-
-install:
-  - apt-get --print-uris --yes install libmysqlcppconn-dev | grep ^\' | cut -d\' -f2 > downloads.list
-  - mkdir downloads
-  - (cd downloads && wget --input-file ../downloads.list)
-  - (cd downloads && for i in `ls`; do dpkg -x $i ../deb; done)
-  - export CC="$CC -isystem $PWD/deb/usr/include -L $PWD/deb/usr/lib -Wno-unused-command-line-argument"
-  - export CXX="$CXX -isystem $PWD/deb/usr/include -L $PWD/deb/usr/lib -Wno-unused-command-line-argument"
-  - export LD_LIBRARY_PATH="$PWD/deb/usr/lib"
-  # Clean
-  - rm -rf download downloads.list
-
-before_script:
-  - mysql -e "CREATE USER sim@localhost IDENTIFIED BY 'sim'; CREATE DATABASE sim; GRANT ALL ON sim.* TO 'sim'@'localhost';" -u root
+    - libsqlite3-dev
 
 script:
   - make -kj
-  - printf "sim\nsim\nsim\nlocalhost\n" | make install run
+  - make install run
   - wget -t 5 -T 1 --retry-connrefused http://127.7.7.7:8080/
   - cat index.html
 

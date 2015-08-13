@@ -6,7 +6,6 @@
 #include "../include/string.h"
 
 #include <cerrno>
-#include <cppconn/prepared_statement.h>
 #include <csignal>
 #include <cstring>
 #include <limits.h>
@@ -15,111 +14,130 @@
 using std::string;
 
 static const int OLD_WATCH_METHOD_SLEEP = 1 * 1000000; // 1s
-static DB::Connection *db_conn = NULL;
+static sqlite3 *db;
 UniquePtr<TemporaryDirectory> tmp_dir;
 unsigned VERBOSITY = 2; // 0 - quiet, 1 - normal, 2 or more - verbose
 
-static inline DB::Connection& conn() { return *db_conn; }
-
 static void processSubmissionQueue() {
-	try {
-		UniquePtr<sql::Statement> stmt(conn()->createStatement());
+	sqlite3_stmt *stmt, *pstmt = NULL;
+	sqlite3_prepare_v2(db, "SELECT id, user_id, round_id, problem_id "
+		"FROM submissions "
+		"WHERE status='waiting' ORDER BY queued LIMIT 10", -1, &stmt, NULL);
+	// While submission queue is not empty
+	for (;;) {
+		sqlite3_reset(stmt);
 
-		// While submission queue is not empty
-		for (;;) {
-			UniquePtr<sql::ResultSet> res(stmt->executeQuery(
-				"SELECT id, user_id, round_id, problem_id FROM submissions "
-				"WHERE status='waiting' ORDER BY queued LIMIT 10"));
-			if (res->rowsCount() == 0)
-				return; // Queue is empty
+		if (sqlite3_step(stmt) != SQLITE_ROW)
+			goto exit;
 
-			while (res->next()) {
-				try {
-					string submission_id = res->getString(1);
-					string user_id = res->getString(2);
-					string round_id = res->getString(3);
-					string problem_id = res->getString(4);
+		do {
+			const char* submission_id = (const char*)sqlite3_column_text(stmt,
+				0);
+			const char* user_id = (const char*)sqlite3_column_text(stmt, 1);
+			const char* round_id = (const char*)sqlite3_column_text(stmt, 2);
+			const char* problem_id = (const char*)sqlite3_column_text(stmt, 3);
 
-					// Judge
-					JudgeResult jres = judge(submission_id, problem_id);
+			// Judge
+			JudgeResult jres = judge(submission_id, problem_id);
 
-					// Update submission
-					putFileContents("submissions/" + submission_id,
-						jres.content);
+			// Update submission
+			putFileContents(string("submissions/") + submission_id,
+				jres.content);
 
-					// Update final
-					UniquePtr<sql::PreparedStatement> pstmt;
-					if (jres.status != JudgeResult::CERROR) {
-						// Remove old final:
-						// From submissions_to_rounds
-						pstmt.reset(conn()->prepareStatement("UPDATE submissions_to_rounds SET final=false WHERE submission_id=(SELECT id FROM submissions WHERE round_id=? AND user_id=? AND final=true LIMIT 1)"));
-						pstmt->setString(1, round_id);
-						pstmt->setString(2, user_id);
-						pstmt->executeUpdate();
+			sqlite3_exec(db, "BEGIN", NULL, NULL, NULL);
+			// Update final
+			if (jres.status != JudgeResult::COMPILE_ERROR) {
+				// Remove old final:
+				// From submissions_to_rounds
+				sqlite3_prepare_v2(db, "UPDATE submissions_to_rounds "
+					"SET final=false WHERE submission_id="
+						"(SELECT id FROM submissions WHERE round_id=? AND "
+						"user_id=? AND final=true LIMIT 1)", -1, &pstmt, NULL);
+				sqlite3_bind_text(pstmt, 1, round_id, -1, SQLITE_STATIC);
+				sqlite3_bind_text(pstmt, 2, user_id, -1, SQLITE_STATIC);
 
-						// From submissions
-						pstmt.reset(conn()->prepareStatement(
-							"UPDATE submissions SET final=false "
-							"WHERE round_id=? AND user_id=? AND final=true"));
-						pstmt->setString(1, round_id);
-						pstmt->setString(2, user_id);
-						pstmt->executeUpdate();
-
-						// Set new final in submissions_to_rounds
-						stmt->executeUpdate("UPDATE submissions_to_rounds "
-							"SET final=true WHERE submission_id=" +
-								submission_id);
-					}
-
-					// Update submission
-					pstmt.reset(conn()->prepareStatement("UPDATE submissions "
-						"SET status=?, score=?, final=? WHERE id=?"));
-
-					switch (jres.status) {
-					case JudgeResult::OK:
-						pstmt->setString(1, "ok");
-						break;
-
-					case JudgeResult::ERROR:
-						pstmt->setString(1, "error");
-						break;
-
-					case JudgeResult::CERROR:
-						pstmt->setString(1, "c_error");
-						pstmt->setNull(2, 0);
-						pstmt->setBoolean(3, false);
-						break;
-
-					case JudgeResult::JUDGE_ERROR:
-						pstmt->setString(1, "judge_error");
-						pstmt->setNull(2, 0);
-						pstmt->setBoolean(3, false);
-
-					}
-
-					if (jres.status != JudgeResult::CERROR &&
-							jres.status != JudgeResult::JUDGE_ERROR) {
-						pstmt->setString(2, toString(jres.score));
-						pstmt->setBoolean(3, true);
-					}
-
-					pstmt->setString(4, submission_id);
-					pstmt->executeUpdate();
-
-				} catch (const std::exception& e) {
-					E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__,
-						__LINE__, e.what());
+				if (sqlite3_step(pstmt) != SQLITE_DONE) {
+					eprintf("Error: sqlite3_step() - %s:%i\n", __FILE__,
+						__LINE__);
+					sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+					goto exit;
 				}
+
+				// From submissions
+				sqlite3_finalize(pstmt);
+				sqlite3_prepare_v2(db, "UPDATE submissions SET final=false "
+					"WHERE round_id=? AND user_id=? AND final=true", -1, &pstmt,
+					NULL);
+				sqlite3_bind_text(pstmt, 1, round_id, -1, SQLITE_STATIC);
+				sqlite3_bind_text(pstmt, 2, user_id, -1, SQLITE_STATIC);
+
+				if (sqlite3_step(pstmt) != SQLITE_DONE) {
+					eprintf("Error: sqlite3_step() - %s:%i\n", __FILE__,
+						__LINE__);
+					sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+					goto exit;
+				}
+
+				// Set new final in submissions_to_rounds
+				sqlite3_finalize(pstmt);
+				sqlite3_prepare_v2(db, "UPDATE submissions_to_rounds "
+					"SET final=true WHERE submission_id=?", -1, &pstmt, NULL);
+				sqlite3_bind_text(pstmt, 1, submission_id, -1, SQLITE_STATIC);
+
+				if (sqlite3_step(pstmt) != SQLITE_DONE) {
+					eprintf("Error: sqlite3_step() - %s:%i\n", __FILE__,
+						__LINE__);
+					sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+					goto exit;
+				}
+				sqlite3_finalize(pstmt);
 			}
-		}
 
-	} catch (const std::exception& e) {
-		E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__, __LINE__,
-			e.what());
+			// Update submission
+			sqlite3_prepare_v2(db, "UPDATE submissions SET status=?, score=?, "
+				"final=? WHERE id=?", -1, &pstmt, NULL);
 
-	} catch (...) {
-		E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
+			switch (jres.status) {
+			case JudgeResult::OK:
+				sqlite3_bind_int(pstmt, 1, OK);
+				break;
+
+			case JudgeResult::ERROR:
+				sqlite3_bind_int(pstmt, 1, ERROR);
+				break;
+
+			case JudgeResult::COMPILE_ERROR:
+				sqlite3_bind_int(pstmt, 1, COMPILE_ERROR);
+				sqlite3_bind_null(pstmt, 2);
+				sqlite3_bind_int(pstmt, 3, false);
+				break;
+
+			case JudgeResult::JUDGE_ERROR:
+				sqlite3_bind_int(pstmt, 1, JUDGE_ERROR);
+				sqlite3_bind_null(pstmt, 2);
+				sqlite3_bind_int(pstmt, 3, false);
+			}
+
+			if (jres.status != JudgeResult::COMPILE_ERROR &&
+					jres.status != JudgeResult::JUDGE_ERROR) {
+				sqlite3_bind_int(pstmt, 2, jres.score);
+				sqlite3_bind_int(pstmt, 3, true);
+			}
+
+			sqlite3_bind_text(pstmt, 4, submission_id, -1, SQLITE_STATIC);
+			if (sqlite3_step(pstmt) != SQLITE_DONE) {
+				eprintf("Error: sqlite3_step() - %s:%i\n", __FILE__,
+					__LINE__);
+				sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+				goto exit;
+			}
+
+			sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
+		} while (sqlite3_step(stmt) == SQLITE_ROW);
 	}
+exit:
+	sqlite3_finalize(stmt);
+	sqlite3_finalize(pstmt);
 }
 
 void startWatching(int inotify_fd, int& wd) {
@@ -145,19 +163,19 @@ int main() {
 	sigaction(SIGQUIT, &sa, NULL);
 	sigaction(SIGTERM, &sa, NULL);
 
-	// Connect to database
-	try {
-		db_conn = DB::createConnectionUsingPassFile(".db.config");
+	// Configure SQLite
+	sqlite3_config(SQLITE_CONFIG_SINGLETHREAD);
+	sqlite3_config(SQLITE_CONFIG_MEMSTATUS, false);
+	sqlite3_initialize();
 
-	} catch (const std::exception& e) {
-		E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__, __LINE__,
-			e.what());
-		return 1;
-
-	} catch (...) {
-		E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
+	// Open database connection
+	if (sqlite3_open(DB_FILENAME, &db)) {
+		eprintf("Cannot open database: %s\n", sqlite3_errmsg(db));
+		sqlite3_close(db);
 		return 1;
 	}
+
+	sqlite3_busy_timeout(db, 0);
 
 	// Create tmp_dir
 	tmp_dir.reset(new TemporaryDirectory("/tmp/sim-judge-machine.XXXXXX"));
@@ -203,5 +221,7 @@ int main() {
 		// Run tests
 		processSubmissionQueue();
 	}
+
+	sqlite3_close(db);
 	return 0;
 }

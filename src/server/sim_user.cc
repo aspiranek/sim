@@ -6,8 +6,6 @@
 #include "../include/debug.h"
 #include "../include/sha.h"
 
-#include <cppconn/prepared_statement.h>
-
 using std::string;
 using std::map;
 
@@ -68,20 +66,24 @@ void Sim::User::handle() {
 	arg_beg += res_code + 1;
 
 	// Get user information
-	UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->prepareStatement(
-		"SELECT username, first_name, last_name, email, type "
-		"FROM users WHERE id=?"));
-	pstmt->setString(1, data.user_id);
+	sqlite3_stmt *stmt;
+	if (sqlite3_prepare_v2(sim_.db, "SELECT username, first_name, last_name, "
+		"email, type FROM users WHERE id=?", -1, &stmt, NULL))
+		return sim_.error500();
 
-	UniquePtr<sql::ResultSet> res(pstmt->executeQuery());
-	if (res->next()) {
-		data.username = res->getString(1);
-		data.first_name = res->getString(2);
-		data.last_name = res->getString(3);
-		data.email = res->getString(4);
-		data.user_type = res->getUInt(5);
-	} else
+	sqlite3_bind_text(stmt, 1, data.user_id.c_str(), -1, SQLITE_STATIC);
+
+	if (sqlite3_step(stmt) == SQLITE_ROW) {
+		data.username = (const char*)sqlite3_column_text(stmt, 0);
+		data.first_name = (const char*)sqlite3_column_text(stmt, 1);
+		data.last_name = (const char*)sqlite3_column_text(stmt, 2);
+		data.email = (const char*)sqlite3_column_text(stmt, 3);
+		data.user_type = sqlite3_column_int(stmt, 4);
+		sqlite3_finalize(stmt);
+	} else {
+		sqlite3_finalize(stmt);
 		return sim_.error404();
+	}
 
 	data.view_type = Data::FULL;
 	/* Check permissions
@@ -115,6 +117,219 @@ void Sim::User::handle() {
 	editProfile(data);
 }
 
+// Krzysztof Małysa
+#include <bits/stdc++.h>
+#include <unistd.h>
+
+using namespace std;
+
+#define FOR(i,a,n) for (int i = (a), __n ## i = n; i < __n ## i; ++i)
+#define REP(i,n) FOR(i,0,n)
+#define FORD(i,a,n) for (int i = (a), __n ## i = n; i >= __n ## i; --i)
+#define LET(x,a) __typeof(a) x = (a)
+#define FOREACH(i,x) for (LET(i, x.begin()), __n##i = x.end(); i != __n##i; ++i)
+#define ALL(x) x.begin(), x.end()
+#define SZ(x) (int(x.size()))
+#define eprintf(...) fprintf(stderr, __VA_ARGS__)
+#define ST first
+#define ND second
+#define MP make_pair
+#define PB push_back
+#define O(...) ostream& operator <<(ostream& os, const __VA_ARGS__& x)
+#define OO(...) O(__VA_ARGS__) { return __out(os, ALL(x)); }
+#define T template
+#define CL class
+
+typedef unsigned uint;
+typedef long long LL;
+typedef unsigned long long ULL;
+typedef vector<int> VI;
+typedef vector<VI> VVI;
+typedef vector<LL> VLL;
+typedef pair<int, int> PII;
+typedef vector<PII> VPII;
+typedef vector<VPII> VVPII;
+typedef pair<LL, LL> PLLLL;
+typedef vector<PLLLL> VPLLLL;
+typedef vector<bool> VB;
+typedef vector<char> VC;
+
+T<CL A>
+inline A abs(const A& a) { return a < A() ? -a : a; }
+
+T<CL A, CL B>
+inline void mini(A& a, const B& b) {
+	if (b < a)
+		a = b;
+}
+
+T<CL A, CL B>
+inline void maxi(A& a, const B& b) {
+	if (b > a)
+		a = b;
+}
+
+T<CL Iter>
+ostream& __out(ostream& os, Iter a, Iter b, const string& s = ", ");
+
+T<CL A, CL B>
+O(pair<A, B>);
+
+T<CL A>
+OO(vector<A>)
+
+T<CL A>
+OO(deque<A>)
+
+T<CL A>
+OO(list<A>)
+
+T<CL A, CL B>
+OO(set<A, B>)
+
+T<CL A, CL B, CL C>
+OO(map<A, B, C>)
+
+T<CL A, CL B>
+OO(multiset<A, B>)
+
+T<CL A, CL B, CL C>
+OO(multimap<A, B, C>)
+
+T<CL Iter>
+ostream& __out(ostream& os, Iter a, Iter b, const string& s) {
+	os << "{";
+	if (a != b) {
+		os << *a;
+		while (++a != b)
+			os << s << *a;
+	}
+	return os << "}";
+}
+
+T<CL A, CL B>
+O(pair<A, B>) {
+	return os << "(" << x.ST << ", " << x.ND << ")";
+}
+
+CL Input {
+	static const int BUFF_SIZE = 1 << 16;
+	unsigned char buff[BUFF_SIZE], *pos, *end;
+
+	void grabBuffer() {
+		pos = buff;
+		end = buff + read(0, buff, BUFF_SIZE);
+	}
+
+public:
+	Input() : pos(buff), end(buff) {}
+
+	int peek() {
+		if (pos == end)
+			grabBuffer();
+		return pos != end ? *pos : -1;
+	}
+
+	int getChar() {
+		if (pos == end)
+			grabBuffer();
+		return pos != end ? *pos++ : -1;
+	}
+
+	void skipWhiteSpaces() {
+		while (isspace(peek()))
+			++pos;
+	}
+
+	T<CL A>
+	A get();
+
+	T<CL A>
+	void operator()(A& x) { x = get<A>(); }
+
+	T<CL A, CL B>
+	void operator()(A& a, B& b) { operator()(a), operator()(b); }
+
+	T<CL A, CL B, CL C>
+	void operator()(A& a, B& b, C& c) { operator()(a, b), operator()(c); }
+
+	T<CL A, CL B, CL C, CL D>
+	void operator()(A& a, B& b, C& c, D& d) {
+		operator()(a, b, c);
+		operator()(d);
+	}
+
+	T<CL A, CL B, CL C, CL D, CL E>
+	void operator()(A& a, B& b, C& c, D& d, E& e) {
+		operator()(a, b, c, d);
+		operator()(e);
+	}
+
+	T<CL A, CL B, CL C, CL D, CL E, CL F>
+	void operator()(A& a, B& b, C& c, D& d, E& e, F& f) {
+		operator()(a, b, c, d, e);
+		operator()(f);
+	}
+} input;
+
+
+T<> uint Input::get<uint>() {
+	skipWhiteSpaces();
+	uint x = 0;
+	while (isdigit(peek()))
+		x = x * 10 + *pos++ - '0';
+	return x;
+}
+
+T<> int Input::get<int>() {
+	skipWhiteSpaces();
+	return peek() == '-' ? (++pos, -get<uint>()) : get<uint>();
+}
+
+T<> ULL Input::get<ULL>() {
+	skipWhiteSpaces();
+	ULL x = 0;
+	while (isdigit(peek()))
+		x = x * 10 + *pos++ - '0';
+	return x;
+}
+
+T<> LL Input::get<LL>() {
+	skipWhiteSpaces();
+	return peek() == '-' ? (++pos, -get<ULL>()) : get<ULL>();
+}
+
+T<> string Input::get<string>() {
+	skipWhiteSpaces();
+	string x;
+	while (!isspace(peek()))
+		x += *pos++;
+	return x;
+}
+
+#undef T
+#undef CL
+#ifdef DEBUG
+# define D(...) __VA_ARGS__
+# define E(...) eprintf(__VA_ARGS__)
+# define OUT(a,b) cerr << #a ":", __out(cerr, a, b), E("\n")
+# define LOG(x) cerr << #x ": " << (x)
+# define LOG2(x, y) cerr << x ": " << (y)
+# define LOGN(x) LOG(x) << endl
+# define LOGN2(x, y) LOG2(x, y) << endl
+#else
+# define D(...)
+# define E(...)
+# define OUT(...)
+# define LOG(...)
+# define LOG2(...)
+# define LOGN(...)
+# define LOGN2(...)
+#endif
+/// End of templates
+
+
+
 void Sim::User::login() {
 	FormValidator fv(sim_.req_->form_data);
 	string username;
@@ -126,37 +341,36 @@ void Sim::User::login() {
 		fv.validate(username, "username", "Username", 30);
 		fv.validate(password, "password", "Password");
 
-		if (fv.noErrors())
-			try {
-				UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->
-					prepareStatement("SELECT id FROM `users` "
-						"WHERE username=? AND password=?"));
-				pstmt->setString(1, username);
-				pstmt->setString(2, sha256(password));
+		if (fv.noErrors()) {
+			sqlite3_stmt *stmt;
+			if (sqlite3_prepare_v2(sim_.db, "SELECT id FROM users "
+					"WHERE username=? AND password=?", -1, &stmt, NULL))
+				return sim_.error500();
 
-				UniquePtr<sql::ResultSet> res(pstmt->executeQuery());
+			sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC);
+			sqlite3_bind_text(stmt, 2, sha256(password).c_str(), -1,
+				SQLITE_TRANSIENT);
 
-				if (res->next()) {
-					// Delete old sessions
-					sim_.session->open();
-					sim_.session->destroy();
-					// Create new
-					sim_.session->create(res->getString(1));
+			if (sqlite3_step(stmt) == SQLITE_ROW) {
+				// Delete old sessions
+				sqlite3_exec(sim_.db, "BEGIN", NULL, NULL, NULL);
+				sim_.session->open();
+				sim_.session->destroy();
+				// Create new
+				sim_.session->create((const char*)sqlite3_column_text(stmt, 0));
+				sqlite3_exec(sim_.db, "COMMIT", NULL, NULL, NULL);
 
-					// If there is redirection string, redirect
-					if (sim_.req_->target.size() > 6)
-						return sim_.redirect(sim_.req_->target.substr(6));
+				sqlite3_finalize(stmt);
 
-					return sim_.redirect("/");
-				}
+				// If there is redirection string, redirect
+				if (sim_.req_->target.size() > 6)
+					return sim_.redirect(sim_.req_->target.substr(6));
 
-			} catch (const std::exception& e) {
-				E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__,
-					__LINE__, e.what());
-
-			} catch (...) {
-				E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
+				return sim_.redirect("/");
 			}
+
+			sqlite3_finalize(stmt);
+		}
 	}
 
 	Template templ(sim_, "Login");
@@ -206,39 +420,40 @@ void Sim::User::signUp() {
 			fv.addError("Passwords don't match");
 
 		// If all fields are ok
-		if (fv.noErrors())
-			try {
-				UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->
-					prepareStatement("INSERT IGNORE INTO `users` "
-						"(username, first_name, last_name, email, password) "
-						"VALUES(?, ?, ?, ?, ?)"));
-				pstmt->setString(1, username);
-				pstmt->setString(2, first_name);
-				pstmt->setString(3, last_name);
-				pstmt->setString(4, email);
-				pstmt->setString(5, sha256(password1));
+		if (fv.noErrors()) {
+			sqlite3_stmt *stmt;
+			if (sqlite3_prepare_v2(sim_.db, "INSERT OR IGNORE INTO `users` "
+					"(username, first_name, last_name, email, password) "
+					"VALUES(?, ?, ?, ?, ?)", -1, &stmt, NULL))
+				return sim_.error500();
 
-				if (pstmt->executeUpdate() == 1) {
-					pstmt.reset(sim_.db_conn()->prepareStatement(
-						"SELECT id FROM `users` WHERE username=?"));
-					pstmt->setString(1, username);
+			sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC);
+			sqlite3_bind_text(stmt, 2, first_name.c_str(), -1, SQLITE_STATIC);
+			sqlite3_bind_text(stmt, 3, last_name.c_str(), -1, SQLITE_STATIC);
+			sqlite3_bind_text(stmt, 4, email.c_str(), -1, SQLITE_STATIC);
+			sqlite3_bind_text(stmt, 5, sha256(password1).c_str(), -1,
+				SQLITE_TRANSIENT);
 
-					UniquePtr<sql::ResultSet> res(pstmt->executeQuery());
-					if (res->next()) {
-						sim_.session->create(res->getString(1));
-						return sim_.redirect("/");
-					}
+			if (sqlite3_step(stmt) == SQLITE_DONE) {
+				sqlite3_finalize(stmt);
+				if (sqlite3_prepare_v2(sim_.db, "SELECT id FROM users "
+						"WHERE username=?", -1, &stmt, NULL))
+					return sim_.error500();
 
-				} else
-					fv.addError("Username taken");
+				sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_STATIC);
 
-			} catch (const std::exception& e) {
-				E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__,
-					__LINE__, e.what());
+				if (sqlite3_step(stmt) == SQLITE_ROW) {
+					sim_.session->create((const char*)sqlite3_column_text(stmt,
+						0));
+					sqlite3_finalize(stmt);
+					return sim_.redirect("/");
+				}
 
-			} catch (...) {
-				E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
-			}
+			} else
+				fv.addError("Username taken");
+
+			sqlite3_finalize(stmt);
+		}
 	}
 
 	Template templ(sim_, "Register");
@@ -303,39 +518,39 @@ void Sim::User::changePassword(Data& data) {
 			fv.addError("Passwords don't match");
 
 		// If all fields are ok
-		if (fv.noErrors())
-			try {
-				UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->
-					prepareStatement("SELECT password FROM users WHERE id=?"));
-				pstmt->setString(1, data.user_id);
+		if (fv.noErrors()) {
+			sqlite3_stmt *stmt;
+			if (sqlite3_prepare_v2(sim_.db, "SELECT password FROM users "
+					"WHERE id=?", -1, &stmt, NULL))
+				return sim_.error500();
 
-				UniquePtr<sql::ResultSet> res(pstmt->executeQuery());
-				if (!res->next())
-					fv.addError("Cannot get user password");
+			sqlite3_bind_text(stmt, 1, data.user_id.c_str(), -1, SQLITE_STATIC);
 
-				else if (sha256(old_password) != res->getString(1))
-						fv.addError("Wrong password");
+			if (sqlite3_step(stmt) != SQLITE_ROW)
+				fv.addError("Cannot get user password");
 
-				else {
-					pstmt.reset(sim_.db_conn()->prepareStatement(
-						"UPDATE users SET password=? WHERE id=?"));
-					pstmt->setString(1, sha256(password1));
-					pstmt->setString(2, data.user_id);
+			else if (sha256(old_password) != (const char*)sqlite3_column_text(
+					stmt, 0))
+				fv.addError("Wrong password");
 
-					if (pstmt->executeUpdate() == 1 ||
-							old_password == password1)
-						fv.addError("Update successful");
-					else
-						fv.addError("Update failed");
-				}
+			else {
+				sqlite3_finalize(stmt);
+				if (sqlite3_prepare_v2(sim_.db, "UPDATE users SET password=? "
+						"WHERE id=?", -1, &stmt, NULL))
+					return sim_.error500();
+				sqlite3_bind_text(stmt, 1, sha256(password1).c_str(), -1,
+					SQLITE_TRANSIENT);
+				sqlite3_bind_text(stmt, 2, data.user_id.c_str(), -1,
+					SQLITE_STATIC);
 
-			} catch (const std::exception& e) {
-				E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__,
-					__LINE__, e.what());
-
-			} catch (...) {
-				E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
+				if (sqlite3_step(stmt) == SQLITE_DONE ||
+						old_password == password1)
+					fv.addError("Update successful");
+				else
+					fv.addError("Update failed");
 			}
+			sqlite3_finalize(stmt);
+		}
 	}
 
 	TemplateWithMenu templ(sim_, data.user_id, "Change password");
@@ -382,42 +597,40 @@ void Sim::User::editProfile(Data& data) {
 		fv.validateNotBlank(data.email, "email", "Email", 60);
 
 		// If all fields are ok
-		if (fv.noErrors())
-			try {
-				UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->
-					prepareStatement("UPDATE IGNORE users "
+		if (fv.noErrors()) {
+			sqlite3_stmt *stmt;
+			if (sqlite3_prepare_v2(sim_.db, "UPDATE IGNORE users "
 					"SET username=?, first_name=?, last_name=?, email=?, "
-					"type=? WHERE id=?"));
-				pstmt->setString(1, new_username);
-				pstmt->setString(2, data.first_name);
-				pstmt->setString(3, data.last_name);
-				pstmt->setString(4, data.email);
-				pstmt->setUInt(5, can_change_user_type ? (user_type == "0" ? 0
-						: user_type == "1" ? 1 : 2) : data.user_type);
-				pstmt->setString(6, data.user_id);
+					"type=? WHERE id=?", -1, &stmt, NULL))
+				return sim_.error500();
 
-				if (pstmt->executeUpdate() == 1) {
-					fv.addError("Update successful");
-					// Update user info
-					data.username = new_username;
-					data.user_type = (user_type == "0" ? 0
-						: user_type == "1" ? 1 : 2);
+			sqlite3_bind_text(stmt, 1, new_username.c_str(), -1, SQLITE_STATIC);
+			sqlite3_bind_text(stmt, 2, data.first_name.c_str(), -1,
+				SQLITE_STATIC);
+			sqlite3_bind_text(stmt, 3, data.last_name.c_str(), -1,
+				SQLITE_STATIC);
+			sqlite3_bind_text(stmt, 4, data.email.c_str(), -1, SQLITE_STATIC);
+			sqlite3_bind_int(stmt, 5, can_change_user_type ? (user_type == "0"
+				? 0 : user_type == "1" ? 1 : 2) : data.user_type);
+			sqlite3_bind_text(stmt, 6, data.user_id.c_str(), -1, SQLITE_STATIC);
 
-					if (data.user_id == sim_.session->user_id)
-						// We do not have to actualise user_type because nobody
-						// can change their account type
-						sim_.session->username = new_username;
+			if (sqlite3_step(stmt) == SQLITE_DONE) {
+				fv.addError("Update successful");
+				// Update user info
+				data.username = new_username;
+				data.user_type = (user_type == "0" ? 0
+					: user_type == "1" ? 1 : 2);
 
-				} else if (data.username != new_username)
-					fv.addError("Username '" + new_username + "' is taken");
+				if (data.user_id == sim_.session->user_id)
+					// We do not have to actualise user_type because nobody
+					// can change their account type
+					sim_.session->username = new_username;
 
-			} catch (const std::exception& e) {
-				E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__,
-					__LINE__, e.what());
+			} else if (data.username != new_username)
+				fv.addError("Username '" + new_username + "' is taken");
 
-			} catch (...) {
-				E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__, __LINE__);
-			}
+			sqlite3_finalize(stmt);
+		}
 	}
 
 	TemplateWithMenu templ(sim_, data.user_id, "Edit profile");
@@ -497,50 +710,71 @@ void Sim::User::deleteAccount(Data& data) {
 		return sim_.error403();
 
 	if (sim_.req_->method == server::HttpRequest::POST)
-		if (fv.exist("delete"))
-			try {
-				// Change contests and problems owner id to 1
-				UniquePtr<sql::PreparedStatement> pstmt(sim_.db_conn()->
-					prepareStatement("UPDATE rounds r, problems p "
+		if (fv.exist("delete")) {
+			sqlite3_stmt *stmt;
+			sqlite3_exec(sim_.db, "BEGIN", NULL, NULL, NULL);
+			// Change contests and problems owner id to 1
+			if (sqlite3_prepare_v2(sim_.db, "UPDATE rounds r, problems p "
 					"SET r.owner=1, p.owner=1 "
-					"WHERE r.owner=? OR p.owner=?"));
-				pstmt->setString(1, data.user_id);
-				pstmt->setString(2, data.user_id);
-				pstmt->executeUpdate();
-
-				// Delete submissions
-				pstmt.reset(sim_.db_conn()->prepareStatement(
-					"DELETE FROM submissions, submissions_to_rounds "
-					"USING submissions INNER JOIN submissions_to_rounds "
-					"WHERE submissions.user_id=? AND id=submission_id"));
-				pstmt->setString(1, data.user_id);
-				pstmt->executeUpdate();
-
-				// Delete from users_to_contests
-				pstmt.reset(sim_.db_conn()->prepareStatement(
-					"DELETE FROM users_to_contests WHERE user_id=?"));
-				pstmt->setString(1, data.user_id);
-				pstmt->executeUpdate();
-
-				// Delete user
-				pstmt.reset(sim_.db_conn()->prepareStatement(
-					"DELETE FROM users WHERE id=?"));
-				pstmt->setString(1, data.user_id);
-
-				if (pstmt->executeUpdate() > 0) {
-					if (data.user_id == sim_.session->user_id)
-						sim_.session->destroy();
-					return sim_.redirect("/");
-				}
-
-			} catch (const std::exception& e) {
-				E("\e[31mCaught exception: %s:%d\e[m - %s\n", __FILE__,
-					__LINE__, e.what());
-
-			} catch (...) {
-				E("\e[31mCaught exception: %s:%d\e[m\n", __FILE__,
-					__LINE__);
+					"WHERE r.owner=? OR p.owner=?", -1, &stmt, NULL)) {
+				sqlite3_exec(sim_.db, "ROLLBACK", NULL, NULL, NULL);
+				return sim_.error500();
 			}
+
+			sqlite3_bind_text(stmt, 1, data.user_id.c_str(), -1, SQLITE_STATIC);
+			sqlite3_bind_text(stmt, 2, data.user_id.c_str(), -1, SQLITE_STATIC);
+
+			sqlite3_step(stmt);
+			sqlite3_finalize(stmt);
+
+			// Delete submissions
+			if (sqlite3_prepare_v2(sim_.db,
+					"DELETE FROM submissions, submissions_to_rounds "
+					"USING submissions INNER JOIN submissions_to_rounds " // WARNING!!! - TODO
+					"WHERE submissions.user_id=? AND id=submission_id",
+					-1, &stmt, NULL)) {
+				sqlite3_exec(sim_.db, "ROLLBACK", NULL, NULL, NULL);
+				return sim_.error500();
+			}
+
+			sqlite3_bind_text(stmt, 1, data.user_id.c_str(), -1, SQLITE_STATIC);
+
+			sqlite3_step(stmt);
+			sqlite3_finalize(stmt);
+
+			// Delete from users_to_contests
+			if (sqlite3_prepare_v2(sim_.db, "DELETE FROM users_to_contests "
+					"WHERE user_id=?", -1, &stmt, NULL)) {
+				sqlite3_exec(sim_.db, "ROLLBACK", NULL, NULL, NULL);
+				return sim_.error500();
+			}
+
+			sqlite3_bind_text(stmt, 1, data.user_id.c_str(), -1, SQLITE_STATIC);
+
+			sqlite3_step(stmt);
+			sqlite3_finalize(stmt);
+
+			// Delete user
+			if (sqlite3_prepare_v2(sim_.db, "DELETE FROM users WHERE id=?", -1,
+					&stmt, NULL)) {
+				sqlite3_exec(sim_.db, "ROLLBACK", NULL, NULL, NULL);
+				return sim_.error500();
+			}
+
+			sqlite3_bind_text(stmt, 1, data.user_id.c_str(), -1, SQLITE_STATIC);
+
+			if (sqlite3_step(stmt) == SQLITE_DONE) {
+				if (data.user_id == sim_.session->user_id)
+					sim_.session->destroy();
+
+				sqlite3_finalize(stmt);
+				sqlite3_exec(sim_.db, "COMMIT", NULL, NULL, NULL);
+				return sim_.redirect("/");
+			}
+
+			sqlite3_finalize(stmt);
+			sqlite3_exec(sim_.db, "COMMIT", NULL, NULL, NULL);
+		}
 
 	TemplateWithMenu templ(sim_, data.user_id, "Delete account");
 	templ.printUser(data);

@@ -12,13 +12,12 @@ SIM is open source platform for carrying out algorithmic contests
 ### Dependencies:
 
 - gcc/g++ (32 bit version)
-- MySQL (Debian packages: _mysql-server mysql-client_)
-- [MySQL Connector/C++](http://dev.mysql.com/downloads/connector/cpp/) (Debian package: _libmysqlcppconn-dev_)
+- SQLite (Debian packages: _libsqlite3-dev_)
 
 #### Ubuntu / Debian
 
   ```sh
-  sudo apt-get install g++-multilib mysql-server mysql-client libmysqlcppconn-dev
+  sudo apt-get install g++-multilib libsqlite3-dev
   ```
 
 ### Instructions
@@ -36,18 +35,11 @@ SIM is open source platform for carrying out algorithmic contests
   make
   ```
 
-3. Make sure that you have created MySQL account and database for SIM use command below to create user sim@localhost (password: sim) and database sim:
-
-  ```sh
-  mysql -e "CREATE USER sim@localhost IDENTIFIED BY 'sim'; CREATE DATABASE sim; GRANT ALL ON sim.* TO 'sim'@'localhost';" -u root -p
-  ```
-
-4. Install
+3. Install
 
   ```sh
   make install
   ```
-  It will ask for MySQL credentials
 
   If you want to install SIM in other location that build/ type
 
@@ -67,7 +59,7 @@ SIM is open source platform for carrying out algorithmic contests
   make run DESTDIR=where-you-installed-SIM
   ```
 
-  You can combine installation and running command into:
+  You can combine installation and running commands into:
   ```sh
   make install run
 ```
