@@ -1369,16 +1369,6 @@ function TabMenuBuilder() {
 
 function main_page() {
 	const view = new View('/');
-	// const img = document.createElement('img');
-	// img.src = url_sim_logo_img();
-	// img.width = 260;
-	// img.height = 336;
-	// img.alt = '';
-
-	// const welcome_p = elem_with_text('p', 'Welcome to Sim');
-	// welcome_p.style.fontSize = '30px'
-
-	// view.content_elem.appendChild(elem_of('center', img, welcome_p, document.createElement('hr'), elem_with_text('p', 'test Sim <b>is</b> an open source platform for carrying out algorithmic contests')));
 	view.content_elem.appendChild(elem_with_class("div", "sitedescription"));
 }
 
