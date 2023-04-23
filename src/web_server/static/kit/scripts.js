@@ -1051,7 +1051,7 @@ function handle_session_change(params) {
 		}
 		return document.body.appendChild(elem_with_class('div', 'navbar'));
 	})();
-	navbar.appendChild(elem_with_class_and_text('a', 'brand', 'Sim beta')).href = url_main_page();
+	navbar.appendChild(elem_with_class_and_text('a', 'brand', '')).href = url_main_page();
 	if (global_capabilities.contests.ui_view) {
 		// TODO: this requires jQuery
 		$(navbar).append(a_view_button(url_contests(), 'Contests', undefined, contest_chooser));
@@ -1369,16 +1369,17 @@ function TabMenuBuilder() {
 
 function main_page() {
 	const view = new View('/');
-	const img = document.createElement('img');
-	img.src = url_sim_logo_img();
-	img.width = 260;
-	img.height = 336;
-	img.alt = '';
+	// const img = document.createElement('img');
+	// img.src = url_sim_logo_img();
+	// img.width = 260;
+	// img.height = 336;
+	// img.alt = '';
 
-	const welcome_p = elem_with_text('p', 'Welcome to Sim');
-	welcome_p.style.fontSize = '30px'
+	// const welcome_p = elem_with_text('p', 'Welcome to Sim');
+	// welcome_p.style.fontSize = '30px'
 
-	view.content_elem.appendChild(elem_of('center', img, welcome_p, document.createElement('hr'), elem_with_text('p', 'Sim is an open source platform for carrying out algorithmic contests')));
+	// view.content_elem.appendChild(elem_of('center', img, welcome_p, document.createElement('hr'), elem_with_text('p', 'test Sim <b>is</b> an open source platform for carrying out algorithmic contests')));
+	view.content_elem.appendChild(elem_with_class("div", "sitedescription"));
 }
 
 async function add_user() {
@@ -7450,3 +7451,20 @@ function dt_chooser_input(name, allow_neg_inf /* = false */, allow_inf /* = fals
 
 	return chooser_input.add(value_input).add(buttons);
 }
+
+fetch("/kit/conf.json").then((data) => data.json()).then((json) => {
+	document.getElementsByClassName("brand").item(0).innerHTML = json.brand;
+	document.getElementsByClassName("sitedescription").item(0).innerHTML = json.description;
+	if (json.custom_sites != null)
+	{
+		const navbar = document.getElementsByClassName("navbar").item(0);
+		for (var a of json.custom_sites)
+		{
+			const new_link = elem_with_text("a", a.name);
+			new_link.href = a.url;
+			if (a.target != null)
+				new_link.target = a.target;
+			navbar.insertBefore(new_link, navbar.children[navbar.childNodes.length-3]);
+		}
+	}
+});
